@@ -248,6 +248,11 @@
         .leaflet-container {
             background: var(--bg-color) !important;
         }
+
+        .rotatable-marker {
+            transform-origin: center center;
+            transition: transform 0.1s linear;
+        }
     </style>
 </head>
 <body>
@@ -351,7 +356,7 @@
             "Вінниця, Україна": { lat: 49.2325, lng: 28.4842 }
         };
 
-        // Іконки маркерів з правильним поворотом
+        // Іконки маркерів
         const icons = {
             drone: L.icon({
                 iconUrl: 'https://i.ibb.co/hR7K0df2/1753984336893.png',
@@ -464,7 +469,7 @@
                 }
 
                 const obj = {
-                    id: Date.now().toString(), // Перетворюємо в рядок для Firebase
+                    id: Date.now().toString(),
                     type: document.getElementById('objectType').value,
                     start: startCoords,
                     end: endCoords,
@@ -522,50 +527,53 @@
             }
         }
 
-        // Анімація об'єкта з правильним поворотом
-function animateObject(obj) {
-    obj.marker = L.marker([obj.start.lat, obj.start.lng], {
-        icon: icons[obj.type],
-        rotationAngle: calculateAngle(obj.start, obj.end) // Додаємо початковий кут
-    }).addTo(map);
-
-    const startTime = obj.startTime;
-    const endTime = startTime + obj.duration;
-
-    function update() {
-        const now = Date.now();
-        const progress = Math.min(1, (now - startTime) / obj.duration);
-        
-        if (progress >= 1) {
-            map.removeLayer(obj.marker);
-            activeObjects = activeObjects.filter(o => o.id !== obj.id);
-            saveObjectsToFirebase();
-            return;
+        // Функція для розрахунку кута повороту (в градусах)
+        function calculateAngle(start, end) {
+            const dx = end.lng - start.lng;
+            const dy = end.lat - start.lat;
+            return (Math.atan2(dy, dx) * 180 / Math.PI + 90) % 360;
         }
 
-        // Оновлюємо позицію
-        const lat = obj.start.lat + (obj.end.lat - obj.start.lat) * progress;
-        const lng = obj.start.lng + (obj.end.lng - obj.start.lng) * progress;
-        obj.marker.setLatLng([lat, lng]);
-        
-        // Оновлюємо кут повороту під час руху
-        const currentPos = { lat, lng };
-        const newAngle = calculateAngle(currentPos, obj.end);
-        obj.marker.setRotationAngle(newAngle);
+        // Анімація об'єкта з правильним поворотом
+        function animateObject(obj) {
+            // Спочатку створюємо маркер без повороту
+            obj.marker = L.marker([obj.start.lat, obj.start.lng], {
+                icon: icons[obj.type]
+            }).addTo(map);
 
-        requestAnimationFrame(update);
-    }
+            // Встановлюємо початковий кут повороту
+            const initialAngle = calculateAngle(obj.start, obj.end);
+            obj.marker._icon.style.transform = `rotate(${initialAngle}deg)`;
 
-    update();
-}
+            const startTime = obj.startTime;
+            const endTime = startTime + obj.duration;
 
-// Функція для розрахунку кута повороту (в градусах)
-function calculateAngle(start, end) {
-    const dx = end.lng - start.lng;
-    const dy = end.lat - start.lat;
-    // 90 - angle повертає маркер "носом" вперед
-    return (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
-}}
+            function update() {
+                const now = Date.now();
+                const progress = Math.min(1, (now - startTime) / obj.duration);
+                
+                if (progress >= 1) {
+                    map.removeLayer(obj.marker);
+                    activeObjects = activeObjects.filter(o => o.id !== obj.id);
+                    saveObjectsToFirebase();
+                    return;
+                }
+
+                // Оновлюємо позицію
+                const lat = obj.start.lat + (obj.end.lat - obj.start.lat) * progress;
+                const lng = obj.start.lng + (obj.end.lng - obj.start.lng) * progress;
+                obj.marker.setLatLng([lat, lng]);
+
+                // Оновлюємо кут повороту
+                const currentPos = { lat, lng };
+                const newAngle = calculateAngle(currentPos, obj.end);
+                obj.marker._icon.style.transform = `rotate(${newAngle}deg)`;
+
+                requestAnimationFrame(update);
+            }
+
+            update();
+        }
 
         // Збереження даних у Firebase
         function saveSettingsToFirebase() {
@@ -582,7 +590,7 @@ function calculateAngle(start, end) {
                     start: obj.start,
                     end: obj.end,
                     duration: obj.duration,
-                    startTime: obj.startTime // Зберігаємо початковий час
+                    startTime: obj.startTime
                 };
             });
             database.ref('activeObjects').set(data)
@@ -676,6 +684,13 @@ function calculateAngle(start, end) {
                 this.textContent = document.getElementById('controlPanel').classList.contains('hidden') 
                     ? '👁️' : '✕';
             });
+
+            // Тестовий маркер для перевірки повороту
+            const testMarker = L.marker([50.45, 30.52], {
+                icon: icons.drone
+            }).addTo(map);
+            testMarker._icon.style.transform = 'rotate(45deg)';
+            testMarker.bindPopup("Тест повороту маркера (45 градусів)").openPopup();
         });
     </script>
 </body>
