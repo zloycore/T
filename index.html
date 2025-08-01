@@ -351,17 +351,19 @@
             "Вінниця, Україна": { lat: 49.2325, lng: 28.4842 }
         };
 
-        // Іконки маркерів
+        // Іконки маркерів з правильним поворотом
         const icons = {
             drone: L.icon({
                 iconUrl: 'https://i.ibb.co/hR7K0df2/1753984336893.png',
                 iconSize: [32, 32],
-                iconAnchor: [16, 16]
+                iconAnchor: [16, 16],
+                className: 'rotatable-marker'
             }),
             missile: L.icon({
                 iconUrl: 'https://i.ibb.co/nsBFHFFf/1753993399686.png',
                 iconSize: [32, 32],
-                iconAnchor: [16, 16]
+                iconAnchor: [16, 16],
+                className: 'rotatable-marker'
             })
         };
 
@@ -370,6 +372,7 @@
 
         // Завантаження даних з Firebase
         function loadData() {
+            // Завантажити міста та координати
             database.ref('locations').once('value').then(snapshot => {
                 const data = snapshot.val();
                 if (data) locations = data;
@@ -380,6 +383,7 @@
                 if (data) fallbackCoordinates = data;
             });
 
+            // Завантажити активні об'єкти
             database.ref('activeObjects').on('value', snapshot => {
                 const data = snapshot.val();
                 if (data) {
@@ -391,11 +395,10 @@
 
                     // Додати нові об'єкти
                     Object.values(data).forEach(obj => {
-                        const remainingTime = obj.duration - obj.elapsedTime;
+                        const remainingTime = obj.duration - (Date.now() - obj.startTime);
                         if (remainingTime > 0) {
                             const newObj = {
                                 ...obj,
-                                startTime: Date.now() - obj.elapsedTime,
                                 marker: null
                             };
                             activeObjects.push(newObj);
@@ -461,7 +464,7 @@
                 }
 
                 const obj = {
-                    id: Date.now(),
+                    id: Date.now().toString(), // Перетворюємо в рядок для Firebase
                     type: document.getElementById('objectType').value,
                     start: startCoords,
                     end: endCoords,
@@ -519,11 +522,21 @@
             }
         }
 
-        // Анімація об'єкта
+        // Анімація об'єкта з правильним поворотом
         function animateObject(obj) {
             obj.marker = L.marker([obj.start.lat, obj.start.lng], {
                 icon: icons[obj.type]
             }).addTo(map);
+
+            // Розрахунок кута повороту
+            function calculateAngle(start, end) {
+                const dx = end.lng - start.lng;
+                const dy = end.lat - start.lat;
+                return Math.atan2(dy, dx) * 180 / Math.PI + 90;
+            }
+
+            const angle = calculateAngle(obj.start, obj.end);
+            obj.marker._icon.style.transform = `rotate(${angle}deg)`;
 
             const startTime = obj.startTime;
             const endTime = startTime + obj.duration;
@@ -564,10 +577,12 @@
                     start: obj.start,
                     end: obj.end,
                     duration: obj.duration,
-                    elapsedTime: Date.now() - obj.startTime
+                    startTime: obj.startTime // Зберігаємо початковий час
                 };
             });
-            database.ref('activeObjects').set(data);
+            database.ref('activeObjects').set(data)
+                .then(() => console.log('Об\'єкти збережено у Firebase'))
+                .catch(error => console.error('Помилка збереження:', error));
         }
 
         // Очищення всіх об'єктів
@@ -576,7 +591,9 @@
                 if (obj.marker) map.removeLayer(obj.marker);
             });
             activeObjects = [];
-            database.ref('activeObjects').remove();
+            database.ref('activeObjects').remove()
+                .then(() => console.log('Всі об\'єкти видалено'))
+                .catch(error => console.error('Помилка видалення:', error));
         }
 
         // Обробник кліку по карті
@@ -628,7 +645,16 @@
 
         // Ініціалізація
         document.addEventListener('DOMContentLoaded', () => {
-            loadData();
+            // Перевірка підключення до Firebase
+            firebase.database().ref('.info/connected').on('value', (snapshot) => {
+                if (snapshot.val() === true) {
+                    console.log('Підключено до Firebase');
+                    loadData();
+                } else {
+                    console.log('Не підключено до Firebase');
+                }
+            });
+
             initializeAutocomplete(
                 document.getElementById('startLocation'), 
                 'startLocation-suggestions'
