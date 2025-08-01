@@ -523,44 +523,49 @@
         }
 
         // Анімація об'єкта з правильним поворотом
-        function animateObject(obj) {
-            obj.marker = L.marker([obj.start.lat, obj.start.lng], {
-                icon: icons[obj.type]
-            }).addTo(map);
+function animateObject(obj) {
+    obj.marker = L.marker([obj.start.lat, obj.start.lng], {
+        icon: icons[obj.type],
+        rotationAngle: calculateAngle(obj.start, obj.end) // Додаємо початковий кут
+    }).addTo(map);
 
-            // Розрахунок кута повороту
-            function calculateAngle(start, end) {
-                const dx = end.lng - start.lng;
-                const dy = end.lat - start.lat;
-                return Math.atan2(dy, dx) * 180 / Math.PI + 90;
-            }
+    const startTime = obj.startTime;
+    const endTime = startTime + obj.duration;
 
-            const angle = calculateAngle(obj.start, obj.end);
-            obj.marker._icon.style.transform = `rotate(${angle}deg)`;
-
-            const startTime = obj.startTime;
-            const endTime = startTime + obj.duration;
-
-            function update() {
-                const now = Date.now();
-                const progress = Math.min(1, (now - startTime) / obj.duration);
-                
-                if (progress >= 1) {
-                    map.removeLayer(obj.marker);
-                    activeObjects = activeObjects.filter(o => o.id !== obj.id);
-                    saveObjectsToFirebase();
-                    return;
-                }
-
-                const lat = obj.start.lat + (obj.end.lat - obj.start.lat) * progress;
-                const lng = obj.start.lng + (obj.end.lng - obj.start.lng) * progress;
-                obj.marker.setLatLng([lat, lng]);
-
-                requestAnimationFrame(update);
-            }
-
-            update();
+    function update() {
+        const now = Date.now();
+        const progress = Math.min(1, (now - startTime) / obj.duration);
+        
+        if (progress >= 1) {
+            map.removeLayer(obj.marker);
+            activeObjects = activeObjects.filter(o => o.id !== obj.id);
+            saveObjectsToFirebase();
+            return;
         }
+
+        // Оновлюємо позицію
+        const lat = obj.start.lat + (obj.end.lat - obj.start.lat) * progress;
+        const lng = obj.start.lng + (obj.end.lng - obj.start.lng) * progress;
+        obj.marker.setLatLng([lat, lng]);
+        
+        // Оновлюємо кут повороту під час руху
+        const currentPos = { lat, lng };
+        const newAngle = calculateAngle(currentPos, obj.end);
+        obj.marker.setRotationAngle(newAngle);
+
+        requestAnimationFrame(update);
+    }
+
+    update();
+}
+
+// Функція для розрахунку кута повороту (в градусах)
+function calculateAngle(start, end) {
+    const dx = end.lng - start.lng;
+    const dy = end.lat - start.lat;
+    // 90 - angle повертає маркер "носом" вперед
+    return (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
+}}
 
         // Збереження даних у Firebase
         function saveSettingsToFirebase() {
