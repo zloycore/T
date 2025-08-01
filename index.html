@@ -305,6 +305,7 @@
         </div>
     </div>
 
+    <!-- Підключення бібліотек -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -555,14 +556,17 @@
         }
 
         function saveObjectsToFirebase() {
-            const data = activeObjects.map(obj => ({
-                id: obj.id,
-                type: obj.type,
-                start: obj.start,
-                end: obj.end,
-                duration: obj.duration,
-                elapsedTime: Date.now() - obj.startTime
-            }));
+            const data = {};
+            activeObjects.forEach(obj => {
+                data[obj.id] = {
+                    id: obj.id,
+                    type: obj.type,
+                    start: obj.start,
+                    end: obj.end,
+                    duration: obj.duration,
+                    elapsedTime: Date.now() - obj.startTime
+                };
+            });
             database.ref('activeObjects').set(data);
         }
 
