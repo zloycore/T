@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Патруль України</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap');
+
+        :root {
+            --bg-color: #0a0a0a;
+            --accent-color: #0f0;
+            --panel-bg: rgba(20, 20, 20, 0.95);
+            --text-color: #ddd;
+            --subtext-color: rgba(221, 221, 221, 0.75);
+            --border-color: #333;
+            --button-hover-color: #0c0;
+            --danger-hover-color: #c00;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background-color: var(--panel-bg);
+            padding: 10px 15px 5px 15px;
+            border-bottom: 1px solid var(--accent-color);
+            box-shadow: 0 0 10px var(--accent-color);
+            text-align: center;
+            position: relative;
+        }
+
+        .header h1 {
+            color: var(--accent-color);
+            text-shadow: 0 0 5px var(--accent-color);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.6rem;
+            line-height: 1.1;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            color: var(--subtext-color);
+            font-size: 0.8rem;
+            line-height: 1.2;
+            margin: 0;
+        }
+
+        .container {
+            display: flex;
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .map-container {
+            flex: 1;
+            height: 100%;
+            position: relative;
+            border: 2px solid var(--border-color);
+            box-shadow: 0 0 15px var(--accent-color);
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+            background-color: var(--bg-color);
+        }
+
+        .control-panel {
+            width: 320px;
+            background-color: var(--panel-bg);
+            padding: 15px;
+            border-left: 1px solid var(--accent-color);
+            box-shadow: -5px 0 10px rgba(0, 255, 0, 0.1);
+            overflow-y: auto;
+            transition: transform 0.3s ease;
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            z-index: 1000;
+        }
+
+        .control-panel.hidden {
+            transform: translateX(100%);
+        }
+
+        .toggle-panel {
+            position: absolute;
+            right: 10px;
+            top: 5px;
+            background-color: var(--panel-bg);
+            border: 1px solid var(--accent-color);
+            color: var(--accent-color);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1001;
+            font-size: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-panel:hover {
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            transform: scale(1.1);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+            position: relative;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--accent-color);
+            font-size: 0.9rem;
+        }
+
+        select, input, button {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 4px;
+            font-size: 0.9rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 5px var(--accent-color);
+        }
+
+        button {
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 5px;
+            transition: all 0.2s ease;
+            height: 40px;
+        }
+
+        button:hover {
+            background-color: var(--button-hover-color);
+        }
+
+        .btn-danger {
+            background-color: #f00;
+        }
+
+        .btn-danger:hover {
+            background-color: var(--danger-hover-color);
+        }
+
+        .error-message {
+            color: #f00;
+            font-size: 0.8rem;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .autocomplete-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: var(--panel-bg);
+            border: 1px solid var(--accent-color);
+            border-radius: 4px;
+            max-height: 150px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+        }
+
+        .autocomplete-suggestions div {
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        .autocomplete-suggestions div:hover {
+            background-color: var(--accent-color);
+            color: var(--bg-color);
+        }
+
+        #customCityModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #customCityModal .modal-content {
+            background: var(--panel-bg);
+            padding: 20px;
+            border: 1px solid var(--accent-color);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 350px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+            .control-panel {
+                width: 100%;
+                height: auto;
+                max-height: 55vh;
+                bottom: 0;
+                top: auto;
+                border-left: none;
+                border-top: 1px solid var(--accent-color);
+            }
+        }
+
+        .leaflet-container {
+            background: var(--bg-color) !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🇺🇦ПАТРУЛЬ УКРАЇНИ🇺🇦</h1>
+        <p>Ми не є офіційним джерелом інформації, карта руху шахедів орієнтовна!</p>
+        <button class="toggle-panel" id="togglePanel">👁️</button>
+    </div>
+
+    <div class="container">
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
+
+        <div class="control-panel" id="controlPanel">
+            <div class="form-group">
+                <label for="objectType">Тип об'єкта</label>
+                <select id="objectType">
+                    <option value="drone">БПЛА</option>
+                    <option value="missile">Ракета</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="startLocation">Початкова локація</label>
+                <input type="text" id="startLocation" placeholder="Введіть місто або координати">
+                <div class="autocomplete-suggestions" id="startLocation-suggestions"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="endLocation">Кінцева локація</label>
+                <input type="text" id="endLocation" placeholder="Введіть місто або координати">
+                <div class="autocomplete-suggestions" id="endLocation-suggestions"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="flightTime">Час польоту (секунди)</label>
+                <input type="number" id="flightTime" min="1" value="1800">
+            </div>
+
+            <button id="addObject">Додати об'єкт</button>
+            <button class="btn-danger" id="clearAll">Очистити все</button>
+        </div>
+    </div>
+
+    <div id="customCityModal">
+        <div class="modal-content">
+            <h3>Додати нове місто</h3>
+            <input type="text" id="customCityName" placeholder="Введіть назву міста">
+            <div class="error-message" id="customCityError"></div>
+            <div class="button-group">
+                <button id="saveCityBtn">Зберегти</button>
+                <button id="cancelCityBtn" class="btn-danger">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-geosearch@3.0.0/dist/geosearch.umd.js"></script>
+
+    <script>
+        // Ініціалізація Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyBfxLdxGCstXofXlq7YWwby1NhPlOYywx0",
+            authDomain: "patrolukraine.firebaseapp.com",
+            databaseURL: "https://patrolukraine-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "patrolukraine",
+            storageBucket: "patrolukraine.firebasestorage.app",
+            messagingSenderId: "556308840889",
+            appId: "1:556308840889:web:e9076087c21fd15f72f668",
+            measurementId: "G-YR090ZKTZG"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Ініціалізація карти
+        const map = L.map('map').setView([49.0, 31.0], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Пошуковий провайдер
+        const searchProvider = new GeoSearch.OpenStreetMapProvider();
+
+        // Дані міст та координат
+        let locations = [
+            "Київ, Україна", "Харків, Україна", "Одеса, Україна", "Дніпро, Україна", 
+            "Львів, Україна", "Запоріжжя, Україна", "Вінниця, Україна"
+        ];
+
+        let fallbackCoordinates = {
+            "Київ, Україна": { lat: 50.4501, lng: 30.5234 },
+            "Харків, Україна": { lat: 49.9935, lng: 36.2304 },
+            "Одеса, Україна": { lat: 46.4825, lng: 30.7233 },
+            "Дніпро, Україна": { lat: 48.4647, lng: 35.0462 },
+            "Львів, Україна": { lat: 49.8397, lng: 24.0297 },
+            "Запоріжжя, Україна": { lat: 47.8517, lng: 35.1172 },
+            "Вінниця, Україна": { lat: 49.2325, lng: 28.4842 }
+        };
+
+        // Іконки маркерів
+        const icons = {
+            drone: L.icon({
+                iconUrl: 'https://i.ibb.co/hR7K0df2/1753984336893.png',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            }),
+            missile: L.icon({
+                iconUrl: 'https://i.ibb.co/nsBFHFFf/1753993399686.png',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            })
+        };
+
+        // Активні об'єкти на карті
+        let activeObjects = [];
+
+        // Завантаження даних з Firebase
+        function loadData() {
+            database.ref('locations').once('value').then(snapshot => {
+                const data = snapshot.val();
+                if (data) locations = data;
+            });
+
+            database.ref('fallbackCoordinates').once('value').then(snapshot => {
+                const data = snapshot.val();
+                if (data) fallbackCoordinates = data;
+            });
+
+            database.ref('activeObjects').on('value', snapshot => {
+                const data = snapshot.val();
+                if (data) {
+                    // Очистити існуючі об'єкти
+                    activeObjects.forEach(obj => {
+                        if (obj.marker) map.removeLayer(obj.marker);
+                    });
+                    activeObjects = [];
+
+                    // Додати нові об'єкти
+                    Object.values(data).forEach(obj => {
+                        const remainingTime = obj.duration - obj.elapsedTime;
+                        if (remainingTime > 0) {
+                            const newObj = {
+                                ...obj,
+                                startTime: Date.now() - obj.elapsedTime,
+                                marker: null
+                            };
+                            activeObjects.push(newObj);
+                            animateObject(newObj);
+                        }
+                    });
+                }
+            });
+        }
+
+        // Автозаповнення міст
+        function initializeAutocomplete(inputElement, suggestionsId) {
+            const container = document.getElementById(suggestionsId);
+            
+            inputElement.addEventListener('input', function() {
+                const query = this.value.toLowerCase();
+                container.innerHTML = '';
+                
+                if (query.length < 2) {
+                    container.style.display = 'none';
+                    return;
+                }
+
+                const matches = locations.filter(loc => 
+                    loc.toLowerCase().includes(query)
+                ).slice(0, 5);
+
+                matches.forEach(match => {
+                    const div = document.createElement('div');
+                    div.textContent = match;
+                    div.addEventListener('click', () => {
+                        inputElement.value = match;
+                        container.style.display = 'none';
+                    });
+                    container.appendChild(div);
+                });
+
+                container.style.display = matches.length ? 'block' : 'none';
+            });
+
+            inputElement.addEventListener('blur', () => {
+                setTimeout(() => container.style.display = 'none', 200);
+            });
+        }
+
+        // Додавання нового об'єкта
+        async function addObject() {
+            const startVal = document.getElementById('startLocation').value.trim();
+            const endVal = document.getElementById('endLocation').value.trim();
+            const timeVal = document.getElementById('flightTime').value.trim();
+
+            if (!startVal || !endVal || !timeVal || isNaN(timeVal) || timeVal <= 0) {
+                alert('Будь ласка, заповніть всі поля коректно!');
+                return;
+            }
+
+            try {
+                const startCoords = await getCoordinates(startVal);
+                const endCoords = await getCoordinates(endVal);
+
+                if (!startCoords || !endCoords) {
+                    throw new Error('Не вдалося визначити координати');
+                }
+
+                const obj = {
+                    id: Date.now(),
+                    type: document.getElementById('objectType').value,
+                    start: startCoords,
+                    end: endCoords,
+                    duration: parseInt(timeVal) * 1000,
+                    startTime: Date.now(),
+                    marker: null
+                };
+
+                activeObjects.push(obj);
+                animateObject(obj);
+                saveObjectsToFirebase();
+                
+                // Очистити поля
+                document.getElementById('startLocation').value = '';
+                document.getElementById('endLocation').value = '';
+            } catch (error) {
+                console.error('Помилка:', error);
+                alert('Помилка: ' + error.message);
+            }
+        }
+
+        // Отримання координат
+        async function getCoordinates(location) {
+            // Перевірка чи це координати
+            const coordsMatch = location.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+            if (coordsMatch) {
+                const lat = parseFloat(coordsMatch[1]);
+                const lng = parseFloat(coordsMatch[2]);
+                if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                    return { lat, lng };
+                }
+            }
+
+            // Перевірка кешу
+            if (fallbackCoordinates[location]) {
+                return fallbackCoordinates[location];
+            }
+
+            // Пошук через геокодер
+            try {
+                const results = await searchProvider.search({ query: location + ', Україна' });
+                if (results.length > 0) {
+                    // Зберегти нове місто
+                    if (!locations.includes(location)) {
+                        locations.push(location);
+                        fallbackCoordinates[location] = { lat: results[0].y, lng: results[0].x };
+                        saveSettingsToFirebase();
+                    }
+                    return { lat: results[0].y, lng: results[0].x };
+                }
+                throw new Error('Місце не знайдено');
+            } catch (error) {
+                console.error('Помилка геокодування:', error);
+                throw error;
+            }
+        }
+
+        // Анімація об'єкта
+        function animateObject(obj) {
+            obj.marker = L.marker([obj.start.lat, obj.start.lng], {
+                icon: icons[obj.type]
+            }).addTo(map);
+
+            const startTime = obj.startTime;
+            const endTime = startTime + obj.duration;
+
+            function update() {
+                const now = Date.now();
+                const progress = Math.min(1, (now - startTime) / obj.duration);
+                
+                if (progress >= 1) {
+                    map.removeLayer(obj.marker);
+                    activeObjects = activeObjects.filter(o => o.id !== obj.id);
+                    saveObjectsToFirebase();
+                    return;
+                }
+
+                const lat = obj.start.lat + (obj.end.lat - obj.start.lat) * progress;
+                const lng = obj.start.lng + (obj.end.lng - obj.start.lng) * progress;
+                obj.marker.setLatLng([lat, lng]);
+
+                requestAnimationFrame(update);
+            }
+
+            update();
+        }
+
+        // Збереження даних у Firebase
+        function saveSettingsToFirebase() {
+            database.ref('locations').set(locations);
+            database.ref('fallbackCoordinates').set(fallbackCoordinates);
+        }
+
+        function saveObjectsToFirebase() {
+            const data = activeObjects.map(obj => ({
+                id: obj.id,
+                type: obj.type,
+                start: obj.start,
+                end: obj.end,
+                duration: obj.duration,
+                elapsedTime: Date.now() - obj.startTime
+            }));
+            database.ref('activeObjects').set(data);
+        }
+
+        // Очищення всіх об'єктів
+        function clearAll() {
+            activeObjects.forEach(obj => {
+                if (obj.marker) map.removeLayer(obj.marker);
+            });
+            activeObjects = [];
+            database.ref('activeObjects').remove();
+        }
+
+        // Обробник кліку по карті
+        map.on('click', function(e) {
+            const lat = e.latlng.lat.toFixed(4);
+            const lng = e.latlng.lng.toFixed(4);
+            const startInput = document.getElementById('startLocation');
+            const endInput = document.getElementById('endLocation');
+
+            if (document.activeElement === startInput) {
+                startInput.value = `${lat}, ${lng}`;
+            } else if (document.activeElement === endInput) {
+                endInput.value = `${lat}, ${lng}`;
+            } else {
+                const modal = document.getElementById('customCityModal');
+                const cityInput = document.getElementById('customCityName');
+                
+                // Спробувати отримати назву місця
+                searchProvider.search({ query: `${lat}, ${lng}` })
+                    .then(results => {
+                        cityInput.value = results[0]?.label || `${lat}, ${lng}`;
+                    })
+                    .catch(() => {
+                        cityInput.value = `${lat}, ${lng}`;
+                    })
+                    .finally(() => {
+                        modal.style.display = 'flex';
+                    });
+
+                // Обробники кнопок модального вікна
+                document.getElementById('saveCityBtn').onclick = function() {
+                    const cityName = cityInput.value.trim();
+                    if (!cityName) return;
+                    
+                    locations.push(cityName);
+                    fallbackCoordinates[cityName] = { lat: parseFloat(lat), lng: parseFloat(lng) };
+                    saveSettingsToFirebase();
+                    
+                    modal.style.display = 'none';
+                    initializeAutocomplete(startInput, 'startLocation-suggestions');
+                    initializeAutocomplete(endInput, 'endLocation-suggestions');
+                };
+                
+                document.getElementById('cancelCityBtn').onclick = function() {
+                    modal.style.display = 'none';
+                };
+            }
+        });
+
+        // Ініціалізація
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+            initializeAutocomplete(
+                document.getElementById('startLocation'), 
+                'startLocation-suggestions'
+            );
+            initializeAutocomplete(
+                document.getElementById('endLocation'), 
+                'endLocation-suggestions'
+            );
+            
+            document.getElementById('addObject').addEventListener('click', addObject);
+            document.getElementById('clearAll').addEventListener('click', clearAll);
+            document.getElementById('togglePanel').addEventListener('click', function() {
+                document.getElementById('controlPanel').classList.toggle('hidden');
+                this.textContent = document.getElementById('controlPanel').classList.contains('hidden') 
+                    ? '👁️' : '✕';
+            });
+        });
+    </script>
+</body>
+</html>
