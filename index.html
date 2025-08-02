@@ -316,6 +316,37 @@
     <script src="https://unpkg.com/leaflet-geosearch@3.0.0/dist/geosearch.umd.js"></script>
 
     <script>
+        // Кастомний маркер з підтримкою повороту
+        L.RotatedMarker = L.Marker.extend({
+            setRotationAngle: function(angle) {
+                this._rotationAngle = angle;
+                this.update();
+                return this;
+            },
+            
+            setRotationOrigin: function(origin) {
+                this._rotationOrigin = origin;
+                this.update();
+                return this;
+            },
+            
+            _setPos: function(pos) {
+                L.Marker.prototype._setPos.call(this, pos);
+                
+                if(this._rotationAngle) {
+                    this._icon.style.transform += ` rotate(${this._rotationAngle}deg)`;
+                }
+                
+                if(this._rotationOrigin) {
+                    this._icon.style.transformOrigin = this._rotationOrigin;
+                }
+            }
+        });
+
+        L.rotatedMarker = function(pos, options) {
+            return new L.RotatedMarker(pos, options);
+        };
+
         // Ініціалізація Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyBfxLdxGCstXofXlq7YWwby1NhPlOYywx0",
@@ -375,53 +406,27 @@
         let activeObjects = [];
 
         // Завантаження даних з Firebase
-        async function loadData() {
-            try {
-                // Завантажити міста та координати
-                const [locationsSnapshot, coordsSnapshot, objectsSnapshot] = await Promise.all([
-                    database.ref('locations').once('value'),
-                    database.ref('fallbackCoordinates').once('value'),
-                    database.ref('activeObjects').once('value')
-                ]);
+        function loadData() {
+            database.ref('locations').once('value').then(snapshot => {
+                const data = snapshot.val();
+                if (data) locations = data;
+            });
 
-                if (locationsSnapshot.exists()) {
-                    locations = locationsSnapshot.val();
-                }
-                if (coordsSnapshot.exists()) {
-                    fallbackCoordinates = coordsSnapshot.val();
-                }
+            database.ref('fallbackCoordinates').once('value').then(snapshot => {
+                const data = snapshot.val();
+                if (data) fallbackCoordinates = data;
+            });
 
-                // Слідкувати за змінами об'єктів
-                database.ref('activeObjects').on('value', snapshot => {
-                    const data = snapshot.val();
-                    if (data) {
-                        // Очистити існуючі об'єкти
-                        activeObjects.forEach(obj => {
-                            if (obj.marker) map.removeLayer(obj.marker);
-                        });
-                        activeObjects = [];
+            database.ref('activeObjects').on('value', snapshot => {
+                const data = snapshot.val();
+                if (data) {
+                    // Очистити існуючі об'єкти
+                    activeObjects.forEach(obj => {
+                        if (obj.marker) map.removeLayer(obj.marker);
+                    });
+                    activeObjects = [];
 
-                        // Додати нові об'єкти
-                        Object.values(data).forEach(obj => {
-                            const remainingTime = obj.duration - (Date.now() - obj.startTime);
-                            if (remainingTime > 0) {
-                                const newObj = {
-                                    ...obj,
-                                    marker: null
-                                };
-                                activeObjects.push(newObj);
-                                animateObject(newObj);
-                            } else {
-                                // Видалити застарілі об'єкти
-                                database.ref(`activeObjects/${obj.id}`).remove();
-                            }
-                        });
-                    }
-                });
-
-                // Ініціалізувати існуючі об'єкти
-                if (objectsSnapshot.exists()) {
-                    const data = objectsSnapshot.val();
+                    // Додати нові об'єкти
                     Object.values(data).forEach(obj => {
                         const remainingTime = obj.duration - (Date.now() - obj.startTime);
                         if (remainingTime > 0) {
@@ -431,12 +436,13 @@
                             };
                             activeObjects.push(newObj);
                             animateObject(newObj);
+                        } else {
+                            // Видалити застарілі об'єкти
+                            database.ref(`activeObjects/${obj.id}`).remove();
                         }
                     });
                 }
-            } catch (error) {
-                console.error('Помилка завантаження даних:', error);
-            }
+            });
         }
 
         // Автозаповнення міст
@@ -557,14 +563,20 @@
 
         // Анімація об'єкта з правильним поворотом
         function animateObject(obj) {
-            obj.marker = L.marker([obj.start.lat, obj.start.lng], {
+            // Створюємо спеціальний маркер з підтримкою повороту
+            obj.marker = L.rotatedMarker([obj.start.lat, obj.start.lng], {
                 icon: icons[obj.type],
-                rotationAngle: calculateAngle(obj.start, obj.end)
+                rotationAngle: 0,
+                rotationOrigin: 'center center'
             }).addTo(map);
-
+            
+            // Встановлюємо початковий кут повороту
+            const initialAngle = calculateAngle(obj.start, obj.end);
+            obj.marker.setRotationAngle(initialAngle);
+            
             const startTime = obj.startTime;
             const endTime = startTime + obj.duration;
-
+            
             function update() {
                 const now = Date.now();
                 const progress = Math.min(1, (now - startTime) / obj.duration);
@@ -575,20 +587,15 @@
                     database.ref(`activeObjects/${obj.id}`).remove();
                     return;
                 }
-
+                
                 // Оновлюємо позицію
                 const lat = obj.start.lat + (obj.end.lat - obj.start.lat) * progress;
                 const lng = obj.start.lng + (obj.end.lng - obj.start.lng) * progress;
                 obj.marker.setLatLng([lat, lng]);
                 
-                // Оновлюємо кут повороту
-                const currentPos = { lat, lng };
-                const angle = calculateAngle(currentPos, obj.end);
-                obj.marker.setRotationAngle(angle);
-
                 requestAnimationFrame(update);
             }
-
+            
             update();
         }
 
