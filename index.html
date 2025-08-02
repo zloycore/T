@@ -17,6 +17,10 @@
             --border-color: #333;
             --button-hover-color: #0c0;
             --danger-hover-color: #c00;
+            --route-change-bg: #00b7eb;
+            --route-change-hover: #00a1d1;
+            --add-time-bg: #00ff00;
+            --add-time-hover: #00cc00;
         }
 
         * {
@@ -87,13 +91,14 @@
             padding: 15px;
             border-left: 1px solid var(--accent-color);
             box-shadow: -5px 0 10px rgba(0, 255, 0, 0.1);
-            overflow-y: auto;
+            overflow-y: scroll;
             transition: transform 0.3s ease;
             position: absolute;
             right: 0;
             top: 0;
             bottom: 0;
             z-index: 1000;
+            max-height: 100vh;
         }
 
         .control-panel.hidden {
@@ -177,6 +182,22 @@
             background-color: var(--danger-hover-color);
         }
 
+        .route-change-btn {
+            background-color: var(--route-change-bg);
+        }
+
+        .route-change-btn:hover {
+            background-color: var(--route-change-hover);
+        }
+
+        .add-time-btn {
+            background-color: var(--add-time-bg);
+        }
+
+        .add-time-btn:hover {
+            background-color: var(--add-time-hover);
+        }
+
         .error-message {
             color: #f00;
             font-size: 0.8rem;
@@ -201,6 +222,9 @@
         .autocomplete-suggestions div {
             padding: 10px;
             cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .autocomplete-suggestions div:hover {
@@ -208,7 +232,24 @@
             color: var(--bg-color);
         }
 
-        #customCityModal {
+        .autocomplete-suggestions .delete-city {
+            background-color: #f00;
+            color: var(--bg-color);
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .autocomplete-suggestions .delete-city:hover {
+            background-color: var(--danger-hover-color);
+        }
+
+        #customCityModal, #changeRouteModal, #addTimeModal {
             display: none;
             position: fixed;
             top: 0;
@@ -221,7 +262,7 @@
             justify-content: center;
         }
 
-        #customCityModal .modal-content {
+        #customCityModal .modal-content, #changeRouteModal .modal-content, #addTimeModal .modal-content {
             background: var(--panel-bg);
             padding: 20px;
             border: 1px solid var(--accent-color);
@@ -237,11 +278,12 @@
             .control-panel {
                 width: 100%;
                 height: auto;
-                max-height: 55vh;
+                max-height: 70vh;
                 bottom: 0;
                 top: auto;
                 border-left: none;
                 border-top: 1px solid var(--accent-color);
+                padding-bottom: 60px;
             }
         }
 
@@ -251,8 +293,49 @@
 
         .rotatable-marker {
             transform-origin: center center;
-            transition: transform 0.1s linear;
-            will-change: transform;
+            transition: transform 0.1s linear, opacity 0.5s linear;
+            will-change: transform, opacity;
+        }
+
+        .info-panel {
+            position: absolute;
+            background: var(--panel-bg);
+            border: 1px solid var(--accent-color);
+            border-radius: 4px;
+            padding: 3px;
+            z-index: 2001;
+            display: none;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.5);
+            max-width: 120px;
+            text-align: left;
+            font-size: 0.7rem;
+        }
+
+        .info-panel .close-btn {
+            position: absolute;
+            top: 1px;
+            right: 1px;
+            width: 14px;
+            height: 14px;
+            background-color: #f00;
+            color: var(--bg-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 9px;
+        }
+
+        .info-panel .close-btn:hover {
+            background-color: var(--danger-hover-color);
+        }
+
+        .info-panel button {
+            width: 100%;
+            margin: 2px 0 0;
+            padding: 2px;
+            font-size: 0.6rem;
         }
     </style>
 </head>
@@ -272,7 +355,7 @@
             <div class="form-group">
                 <label for="objectType">Тип об'єкта</label>
                 <select id="objectType">
-                    <option value="drone">БПЛА</option>
+                    <option value="drone">Shahed</option>
                     <option value="missile">Ракета</option>
                 </select>
             </div>
@@ -311,6 +394,31 @@
         </div>
     </div>
 
+    <div id="changeRouteModal">
+        <div class="modal-content">
+            <h3>Змінити маршрут</h3>
+            <input type="text" id="newEndLocation" placeholder="Введіть нове місто">
+            <div class="autocomplete-suggestions" id="newEndLocation-suggestions"></div>
+            <div class="button-group">
+                <button id="applyRouteChange">Застосувати</button>
+                <button id="cancelRouteChange" class="btn-danger">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addTimeModal">
+        <div class="modal-content">
+            <h3>Додати час</h3>
+            <input type="number" id="additionalTime" placeholder="Додатковий час (секунди)">
+            <div class="button-group">
+                <button id="applyAddTime">Застосувати</button>
+                <button id="cancelAddTime" class="btn-danger">Скасувати</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="infoPanel" class="info-panel"></div>
+
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -341,6 +449,12 @@
                 if(this._rotationOrigin) {
                     this._icon.style.transformOrigin = this._rotationOrigin;
                 }
+            },
+
+            setOpacity: function(opacity) {
+                this._icon.style.opacity = opacity;
+                this.update();
+                return this;
             }
         });
 
@@ -394,13 +508,13 @@
             drone: L.icon({
                 iconUrl: 'https://i.ibb.co/hR7K0df2/1753984336893.png',
                 iconSize: [32, 32],
-                iconAnchor: [16, 16], // Центр іконки
+                iconAnchor: [16, 16],
                 className: 'rotatable-marker'
             }),
             missile: L.icon({
                 iconUrl: 'https://i.ibb.co/nsBFHFFf/1753993399686.png',
                 iconSize: [32, 32],
-                iconAnchor: [16, 16], // Центр іконки
+                iconAnchor: [16, 16],
                 className: 'rotatable-marker'
             })
         };
@@ -465,6 +579,17 @@
                 matches.forEach(match => {
                     const div = document.createElement('div');
                     div.textContent = match;
+                    const deleteBtn = document.createElement('span');
+                    deleteBtn.textContent = '×';
+                    deleteBtn.className = 'delete-city';
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        locations = locations.filter(l => l !== match);
+                        delete fallbackCoordinates[match];
+                        saveSettingsToFirebase();
+                        container.removeChild(div);
+                    });
+                    div.appendChild(deleteBtn);
                     div.addEventListener('click', () => {
                         inputElement.value = match;
                         container.style.display = 'none';
@@ -555,23 +680,33 @@
             }
         }
 
-        // Анімація об'єкта з правильним поворотом
+        // Анімація об'єкта з правильним поворотом і зникненням
         function animateObject(obj) {
+            const infoPanel = document.getElementById('infoPanel');
+            if (!infoPanel) {
+                console.error('Елемент infoPanel не знайдено в DOM!');
+                return;
+            }
+
             obj.marker = L.rotatedMarker([obj.start.lat, obj.start.lng], {
                 icon: icons[obj.type],
                 rotationAngle: 0,
-                rotationOrigin: '50% 0%' // Верхній центр як точка повороту
+                rotationOrigin: '50% 0%'
             }).addTo(map);
 
             const startTime = obj.startTime;
             const endTime = startTime + obj.duration;
+            const fadeDuration = 15000; // 15 секунд
 
             function update() {
                 const now = Date.now();
                 const progress = Math.min(1, (now - startTime) / obj.duration);
+                const remainingTime = endTime - now;
+                const elapsed = now - obj.startTime;
 
                 if (progress >= 1) {
                     map.removeLayer(obj.marker);
+                    if (infoPanel.dataset.objId === obj.id) infoPanel.style.display = 'none';
                     activeObjects = activeObjects.filter(o => o.id !== obj.id);
                     database.ref(`activeObjects/${obj.id}`).remove();
                     return;
@@ -586,19 +721,84 @@
                 // Обчислюємо кут повороту для поточного напрямку руху
                 const dx = obj.end.lng - currentPos.lng;
                 const dy = obj.end.lat - currentPos.lat;
-                let angle = Math.atan2(-dy, dx) * 180 / Math.PI; // Інвертуємо dy для коректної орієнтації
-                angle = (angle + 360) % 360; // Нормалізуємо кут до [0, 360)
+                let angle = Math.atan2(-dy, dx) * 180 / Math.PI;
+                angle = (angle + 360) % 360;
 
-                // Корекція для орієнтації: верхній центр дивиться в напрямок руху
-                angle += 90; // Базова корекція
-                angle = (angle + 360) % 360; // Додаткова нормалізація
+                // Корекція для орієнтації
+                angle += 90;
+                angle = (angle + 360) % 360;
 
                 obj.marker.setRotationAngle(angle);
+
+                // Зникнення за 15 секунд до кінця
+                if (remainingTime <= fadeDuration) {
+                    const opacity = Math.max(0, remainingTime / fadeDuration);
+                    obj.marker.setOpacity(opacity);
+                }
+
+                // Оновлюємо позицію модального вікна та камери в реальному часі
+                if (infoPanel && infoPanel.style.display === 'block' && infoPanel.dataset.objId === obj.id) {
+                    const minutes = Math.floor(remainingTime / 60000);
+                    const seconds = Math.floor((remainingTime % 60000) / 1000);
+                    const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    const distance = getDistanceFromLatLonInKm(obj.start.lat, obj.start.lng, obj.end.lat, obj.end.lng);
+                    const totalTimeHours = obj.duration / 3600000;
+                    const speed = totalTimeHours > 0 ? (distance / totalTimeHours).toFixed(2) : 0;
+
+                    infoPanel.innerHTML = `
+                        <div class="close-btn" onclick="this.parentElement.style.display='none';">×</div>
+                        Об'єкт: ${obj.type === 'drone' ? 'Shahed' : 'Ракета'}<br>
+                        З: ${getLocationName(obj.start)}<br>
+                        До: ${getLocationName(obj.end)}<br>
+                        Час: ${formattedTime}<br>
+                        <button class="route-change-btn" onclick="changeRoute('${obj.id}')">Змінити</button>
+                        <button class="add-time-btn" onclick="addTime('${obj.id}')">Час</button>
+                        <button class="btn-danger" onclick="deleteObject('${obj.id}')">Del</button>
+                    `;
+                    const pixelPos = map.latLngToContainerPoint([lat, lng]);
+                    infoPanel.style.left = `${pixelPos.x + 0}px`; /* Максимально близько */
+                    infoPanel.style.top = `${pixelPos.y - infoPanel.offsetHeight - 0}px`; /* Максимально близько */
+                    map.setView([lat, lng], map.getZoom()); // Переміщуємо камеру за об’єктом
+                }
 
                 requestAnimationFrame(update);
             }
 
             update();
+
+            // Ініціалізація модального вікна при кліку з початковим переміщенням камери
+            obj.marker.on('click', (e) => {
+                infoPanel.dataset.objId = obj.id;
+                infoPanel.style.display = 'block';
+                const latLng = obj.marker.getLatLng();
+                map.setView([latLng.lat, latLng.lng], 10); // Початкове переміщення камери
+            });
+        }
+
+        // Функція для обчислення відстані між двома точками (в км)
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Радіус Землі в км
+            const dLat = deg2rad(lat2 - lat1);
+            const dLon = deg2rad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI / 180);
+        }
+
+        // Функція для отримання назви локації
+        function getLocationName(coords) {
+            for (let loc in fallbackCoordinates) {
+                if (fallbackCoordinates[loc].lat === coords.lat && fallbackCoordinates[loc].lng === coords.lng) {
+                    return loc;
+                }
+            }
+            return `${coords.lat}, ${coords.lng}`;
         }
 
         // Збереження даних у Firebase
@@ -643,49 +843,110 @@
         map.on('click', function(e) {
             const lat = e.latlng.lat.toFixed(4);
             const lng = e.latlng.lng.toFixed(4);
-            const startInput = document.getElementById('startLocation');
-            const endInput = document.getElementById('endLocation');
+            const modal = document.getElementById('customCityModal');
+            const cityInput = document.getElementById('customCityName');
+            cityInput.value = ''; // Очищаємо поле для ручного введення
+            modal.style.display = 'flex';
 
-            if (document.activeElement === startInput) {
-                startInput.value = `${lat}, ${lng}`;
-            } else if (document.activeElement === endInput) {
-                endInput.value = `${lat}, ${lng}`;
-            } else {
-                const modal = document.getElementById('customCityModal');
-                const cityInput = document.getElementById('customCityName');
+            document.getElementById('saveCityBtn').onclick = async function() {
+                const cityName = cityInput.value.trim();
+                if (!cityName) return;
                 
-                searchProvider.search({ query: `${lat}, ${lng}` })
-                    .then(results => {
-                        cityInput.value = results[0]?.label || `${lat}, ${lng}`;
-                    })
-                    .catch(() => {
-                        cityInput.value = `${lat}, ${lng}`;
-                    })
-                    .finally(() => {
-                        modal.style.display = 'flex';
-                    });
-
-                document.getElementById('saveCityBtn').onclick = async function() {
-                    const cityName = cityInput.value.trim();
-                    if (!cityName) return;
-                    
-                    locations.push(cityName);
-                    fallbackCoordinates[cityName] = { lat: parseFloat(lat), lng: parseFloat(lng) };
-                    await saveSettingsToFirebase();
-                    
-                    modal.style.display = 'none';
-                    initializeAutocomplete(startInput, 'startLocation-suggestions');
-                    initializeAutocomplete(endInput, 'endLocation-suggestions');
-                };
+                locations.push(cityName);
+                fallbackCoordinates[cityName] = { lat: parseFloat(lat), lng: parseFloat(lng) };
+                await saveSettingsToFirebase();
                 
-                document.getElementById('cancelCityBtn').onclick = function() {
-                    modal.style.display = 'none';
-                };
-            }
+                modal.style.display = 'none';
+                initializeAutocomplete(document.getElementById('startLocation'), 'startLocation-suggestions');
+                initializeAutocomplete(document.getElementById('endLocation'), 'endLocation-suggestions');
+                initializeAutocomplete(document.getElementById('newEndLocation'), 'newEndLocation-suggestions');
+            };
+            
+            document.getElementById('cancelCityBtn').onclick = function() {
+                modal.style.display = 'none';
+            };
         });
+
+        // Функції для обробки дій у модальному вікні
+        function changeRoute(objId) {
+            const obj = activeObjects.find(o => o.id === objId);
+            if (!obj) return;
+
+            const changeRouteModal = document.getElementById('changeRouteModal');
+            changeRouteModal.style.display = 'flex';
+            const newEndInput = document.getElementById('newEndLocation');
+            initializeAutocomplete(newEndInput, 'newEndLocation-suggestions');
+
+            document.getElementById('applyRouteChange').onclick = async () => {
+                const newEndVal = newEndInput.value.trim();
+                if (!newEndVal) {
+                    alert('Введіть нове місто!');
+                    return;
+                }
+                try {
+                    const newEndCoords = await getCoordinates(newEndVal);
+                    const currentLat = obj.marker.getLatLng().lat;
+                    const currentLng = obj.marker.getLatLng().lng;
+                    const distanceToNewEnd = getDistanceFromLatLonInKm(currentLat, currentLng, newEndCoords.lat, newEndCoords.lng);
+                    const now = Date.now();
+                    const elapsed = now - obj.startTime;
+                    const remainingTimeMs = obj.duration - elapsed;
+                    const speed = getDistanceFromLatLonInKm(obj.start.lat, obj.start.lng, obj.end.lat, obj.end.lng) / (obj.duration / 3600000);
+                    const estimatedTimeMs = (distanceToNewEnd / speed) * 3600 * 1000; // Перерахунок часу
+                    obj.end = newEndCoords;
+                    obj.duration = elapsed + Math.max(remainingTimeMs, estimatedTimeMs); // Оновлюємо тривалість
+                    obj.startTime = now; // Скидаємо стартовий час
+                    await saveObjectToFirebase(obj);
+                    changeRouteModal.style.display = 'none';
+                } catch (error) {
+                    alert('Помилка: ' + error.message);
+                }
+            };
+
+            document.getElementById('cancelRouteChange').onclick = () => {
+                changeRouteModal.style.display = 'none';
+            };
+        }
+
+        function addTime(objId) {
+            const obj = activeObjects.find(o => o.id === objId);
+            if (!obj) return;
+
+            const addTimeModal = document.getElementById('addTimeModal');
+            addTimeModal.style.display = 'flex';
+
+            document.getElementById('applyAddTime').onclick = async () => {
+                const additionalTime = parseInt(document.getElementById('additionalTime').value.trim());
+                if (isNaN(additionalTime) || additionalTime <= 0) {
+                    alert('Введіть коректний додатковий час!');
+                    return;
+                }
+                obj.duration += additionalTime * 1000;
+                await saveObjectToFirebase(obj);
+                addTimeModal.style.display = 'none';
+            };
+
+            document.getElementById('cancelAddTime').onclick = () => {
+                addTimeModal.style.display = 'none';
+            };
+        }
+
+        function deleteObject(objId) {
+            const obj = activeObjects.find(o => o.id === objId);
+            if (!obj) return;
+            map.removeLayer(obj.marker);
+            activeObjects = activeObjects.filter(o => o.id !== obj.id);
+            database.ref(`activeObjects/${obj.id}`).remove();
+        }
 
         // Ініціалізація
         document.addEventListener('DOMContentLoaded', () => {
+            const infoPanel = document.getElementById('infoPanel');
+            if (!infoPanel) {
+                console.error('Елемент infoPanel не знайдено в DOM!');
+                return;
+            }
+
             firebase.database().ref('.info/connected').on('value', (snapshot) => {
                 if (snapshot.val() === true) {
                     console.log('Підключено до Firebase');
