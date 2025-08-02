@@ -260,15 +260,45 @@
             z-index: 2000;
             align-items: center;
             justify-content: center;
+            pointer-events: auto;
         }
 
-        #customCityModal .modal-content, #changeRouteModal .modal-content, #addTimeModal .modal-content {
+        #customCityModal .modal-content, 
+        #changeRouteModal .modal-content, 
+        #addTimeModal .modal-content {
             background: var(--panel-bg);
             padding: 20px;
             border: 1px solid var(--accent-color);
             border-radius: 8px;
             width: 90%;
             max-width: 350px;
+            position: relative;
+            z-index: 2001;
+        }
+
+        .modal-content h3 {
+            color: var(--accent-color);
+            margin-bottom: 15px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .modal-content button {
+            flex: 1;
+        }
+
+        body.modal-open {
+            pointer-events: none;
+        }
+
+        body.modal-open #customCityModal,
+        body.modal-open #changeRouteModal,
+        body.modal-open #addTimeModal {
+            pointer-events: auto;
         }
 
         @media (max-width: 768px) {
@@ -377,7 +407,12 @@
                 <input type="number" id="flightTime" min="1" value="1800">
             </div>
 
-            <button id="addObject">Додати об'єкт</button>
+            <div class="form-group">
+                <label for="objectCount">Кількість об’єктів</label>
+                <input type="number" id="objectCount" min="1" value="1" placeholder="Кількість">
+            </div>
+
+            <button id="addObject">Додати об'єкти</button>
             <button class="btn-danger" id="clearAll">Очистити все</button>
         </div>
     </div>
@@ -562,7 +597,8 @@
         // Автозаповнення міст
         function initializeAutocomplete(inputElement, suggestionsId) {
             const container = document.getElementById(suggestionsId);
-            
+            if (!container) return;
+
             inputElement.addEventListener('input', function() {
                 const query = this.value.toLowerCase();
                 container.innerHTML = '';
@@ -605,17 +641,30 @@
             });
         }
 
-        // Додавання нового об'єкта
+        // Функція для генерації координат із більшим зміщенням
+        function getOffsetCoords(baseCoords, index, count) {
+            const maxOffset = 0.03; // Максимальне зміщення ~3 км
+            const angle = Math.random() * 2 * Math.PI;
+            const radius = Math.random() * maxOffset;
+            return {
+                lat: baseCoords.lat + radius * Math.cos(angle),
+                lng: baseCoords.lng + radius * Math.sin(angle)
+            };
+        }
+
+        // Додавання кількох об’єктів
         async function addObject() {
             const startVal = document.getElementById('startLocation').value.trim();
             const endVal = document.getElementById('endLocation').value.trim();
             const timeVal = document.getElementById('flightTime').value.trim();
+            const countVal = document.getElementById('objectCount').value.trim();
 
-            if (!startVal || !endVal || !timeVal || isNaN(timeVal) || timeVal <= 0) {
+            if (!startVal || !endVal || !timeVal || isNaN(timeVal) || timeVal <= 0 || !countVal || isNaN(countVal) || countVal <= 0) {
                 alert('Будь ласка, заповніть всі поля коректно!');
                 return;
             }
 
+            const count = parseInt(countVal);
             try {
                 const [startCoords, endCoords] = await Promise.all([
                     getCoordinates(startVal),
@@ -626,22 +675,26 @@
                     throw new Error('Не вдалося визначити координати');
                 }
 
-                const obj = {
-                    id: Date.now().toString(),
-                    type: document.getElementById('objectType').value,
-                    start: startCoords,
-                    end: endCoords,
-                    duration: parseInt(timeVal) * 1000,
-                    startTime: Date.now(),
-                    marker: null
-                };
+                for (let i = 0; i < count; i++) {
+                    const offsetStart = getOffsetCoords(startCoords, i, count);
+                    const obj = {
+                        id: Date.now().toString() + '-' + i,
+                        type: document.getElementById('objectType').value,
+                        start: offsetStart,
+                        end: endCoords,
+                        duration: parseInt(timeVal) * 1000,
+                        startTime: Date.now(),
+                        marker: null
+                    };
 
-                activeObjects.push(obj);
-                await saveObjectToFirebase(obj);
-                animateObject(obj);
-                
+                    activeObjects.push(obj);
+                    await saveObjectToFirebase(obj);
+                    animateObject(obj);
+                }
+
                 document.getElementById('startLocation').value = '';
                 document.getElementById('endLocation').value = '';
+                document.getElementById('objectCount').value = '1';
             } catch (error) {
                 console.error('Помилка:', error);
                 alert('Помилка: ' + error.message);
@@ -680,7 +733,7 @@
             }
         }
 
-        // Анімація об'єкта з правильним поворотом і зникненням
+        // Анімація об’єкта з правильним поворотом і зникненням
         function animateObject(obj) {
             const infoPanel = document.getElementById('infoPanel');
             if (!infoPanel) {
@@ -746,19 +799,58 @@
                     const speed = totalTimeHours > 0 ? (distance / totalTimeHours).toFixed(2) : 0;
 
                     infoPanel.innerHTML = `
-                        <div class="close-btn" onclick="this.parentElement.style.display='none';">×</div>
+                        <div class="close-btn">×</div>
                         Об'єкт: ${obj.type === 'drone' ? 'Shahed' : 'Ракета'}<br>
                         З: ${getLocationName(obj.start)}<br>
                         До: ${getLocationName(obj.end)}<br>
                         Час: ${formattedTime}<br>
-                        <button class="route-change-btn" onclick="changeRoute('${obj.id}')">Змінити</button>
-                        <button class="add-time-btn" onclick="addTime('${obj.id}')">Час</button>
-                        <button class="btn-danger" onclick="deleteObject('${obj.id}')">Del</button>
+                        <button class="route-change-btn" data-obj-id="${obj.id}">Змінити</button>
+                        <button class="add-time-btn" data-obj-id="${obj.id}">Час</button>
+                        <button class="btn-danger" data-obj-id="${obj.id}">Del</button>
                     `;
+
+                    // Додаємо слухачі подій для кнопок у infoPanel
+                    const closeBtn = infoPanel.querySelector('.close-btn');
+                    const changeRouteBtn = infoPanel.querySelector('.route-change-btn');
+                    const addTimeBtn = infoPanel.querySelector('.add-time-btn');
+                    const deleteBtn = infoPanel.querySelector('.btn-danger');
+
+                    if (closeBtn) {
+                        closeBtn.removeEventListener('click', handleCloseInfoPanel);
+                        closeBtn.addEventListener('click', handleCloseInfoPanel);
+                        console.log(`Слухач додано до closeBtn для obj.id=${obj.id}`);
+                    } else {
+                        console.error('closeBtn не знайдено');
+                    }
+
+                    if (changeRouteBtn) {
+                        changeRouteBtn.removeEventListener('click', handleChangeRoute);
+                        changeRouteBtn.addEventListener('click', handleChangeRoute);
+                        console.log(`Слухач додано до changeRouteBtn для obj.id=${obj.id}`);
+                    } else {
+                        console.error('changeRouteBtn не знайдено');
+                    }
+
+                    if (addTimeBtn) {
+                        addTimeBtn.removeEventListener('click', handleAddTime);
+                        addTimeBtn.addEventListener('click', handleAddTime);
+                        console.log(`Слухач додано до addTimeBtn для obj.id=${obj.id}`);
+                    } else {
+                        console.error('addTimeBtn не знайдено');
+                    }
+
+                    if (deleteBtn) {
+                        deleteBtn.removeEventListener('click', handleDeleteObject);
+                        deleteBtn.addEventListener('click', handleDeleteObject);
+                        console.log(`Слухач додано до deleteBtn для obj.id=${obj.id}`);
+                    } else {
+                        console.error('deleteBtn не знайдено');
+                    }
+
                     const pixelPos = map.latLngToContainerPoint([lat, lng]);
-                    infoPanel.style.left = `${pixelPos.x + 0}px`; /* Максимально близько */
-                    infoPanel.style.top = `${pixelPos.y - infoPanel.offsetHeight - 0}px`; /* Максимально близько */
-                    map.setView([lat, lng], map.getZoom()); // Переміщуємо камеру за об’єктом
+                    infoPanel.style.left = `${pixelPos.x + 0}px`;
+                    infoPanel.style.top = `${pixelPos.y - infoPanel.offsetHeight - 0}px`;
+                    map.setView([lat, lng], map.getZoom());
                 }
 
                 requestAnimationFrame(update);
@@ -771,8 +863,29 @@
                 infoPanel.dataset.objId = obj.id;
                 infoPanel.style.display = 'block';
                 const latLng = obj.marker.getLatLng();
-                map.setView([latLng.lat, latLng.lng], 10); // Початкове переміщення камери
+                map.setView([latLng.lat, latLng.lng], 10);
             });
+        }
+
+        // Обробники для infoPanel
+        function handleCloseInfoPanel() {
+            const infoPanel = document.getElementById('infoPanel');
+            if (infoPanel) infoPanel.style.display = 'none';
+        }
+
+        function handleChangeRoute(event) {
+            const objId = event.target.dataset.objId;
+            changeRoute(objId);
+        }
+
+        function handleAddTime(event) {
+            const objId = event.target.dataset.objId;
+            addTime(objId);
+        }
+
+        function handleDeleteObject(event) {
+            const objId = event.target.dataset.objId;
+            deleteObject(objId);
         }
 
         // Функція для обчислення відстані між двома точками (в км)
@@ -794,11 +907,12 @@
         // Функція для отримання назви локації
         function getLocationName(coords) {
             for (let loc in fallbackCoordinates) {
-                if (fallbackCoordinates[loc].lat === coords.lat && fallbackCoordinates[loc].lng === coords.lng) {
+                if (Math.abs(fallbackCoordinates[loc].lat - coords.lat) < 0.03 && 
+                    Math.abs(fallbackCoordinates[loc].lng - coords.lng) < 0.03) {
                     return loc;
                 }
             }
-            return `${coords.lat}, ${coords.lng}`;
+            return `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
         }
 
         // Збереження даних у Firebase
@@ -826,7 +940,7 @@
             }
         }
 
-        // Очищення всіх об'єктів
+        // Очищення всіх об’єктів
         async function clearAll() {
             try {
                 activeObjects.forEach(obj => {
@@ -834,109 +948,164 @@
                 });
                 activeObjects = [];
                 await database.ref('activeObjects').remove();
+                document.getElementById('infoPanel').style.display = 'none';
             } catch (error) {
                 console.error('Помилка очищення:', error);
             }
         }
 
-        // Обробник кліку по карті
-        map.on('click', function(e) {
-            const lat = e.latlng.lat.toFixed(4);
-            const lng = e.latlng.lng.toFixed(4);
-            const modal = document.getElementById('customCityModal');
+        // Обробник кліку по карті для customCityModal
+        function initializeCustomCityModal() {
+            let currentLatLng = null;
+
+            map.on('click', function(e) {
+                currentLatLng = { lat: e.latlng.lat.toFixed(4), lng: e.latlng.lng.toFixed(4) };
+                const modal = document.getElementById('customCityModal');
+                const cityInput = document.getElementById('customCityName');
+                if (!modal || !cityInput) return;
+
+                cityInput.value = '';
+                modal.style.display = 'flex';
+                document.body.classList.add('modal-open');
+            });
+
+            const saveCityBtn = document.getElementById('saveCityBtn');
+            const cancelCityBtn = document.getElementById('cancelCityBtn');
             const cityInput = document.getElementById('customCityName');
-            cityInput.value = ''; // Очищаємо поле для ручного введення
-            modal.style.display = 'flex';
+            const modal = document.getElementById('customCityModal');
 
-            document.getElementById('saveCityBtn').onclick = async function() {
-                const cityName = cityInput.value.trim();
-                if (!cityName) return;
-                
-                locations.push(cityName);
-                fallbackCoordinates[cityName] = { lat: parseFloat(lat), lng: parseFloat(lng) };
-                await saveSettingsToFirebase();
-                
-                modal.style.display = 'none';
-                initializeAutocomplete(document.getElementById('startLocation'), 'startLocation-suggestions');
-                initializeAutocomplete(document.getElementById('endLocation'), 'endLocation-suggestions');
-                initializeAutocomplete(document.getElementById('newEndLocation'), 'newEndLocation-suggestions');
-            };
-            
-            document.getElementById('cancelCityBtn').onclick = function() {
-                modal.style.display = 'none';
-            };
-        });
+            if (saveCityBtn && cancelCityBtn && cityInput && modal) {
+                saveCityBtn.addEventListener('click', async () => {
+                    const cityName = cityInput.value.trim();
+                    if (!cityName) {
+                        alert('Введіть назву міста!');
+                        return;
+                    }
+                    if (currentLatLng) {
+                        locations.push(cityName);
+                        fallbackCoordinates[cityName] = { lat: parseFloat(currentLatLng.lat), lng: parseFloat(currentLatLng.lng) };
+                        await saveSettingsToFirebase();
+                        initializeAutocomplete(document.getElementById('startLocation'), 'startLocation-suggestions');
+                        initializeAutocomplete(document.getElementById('endLocation'), 'endLocation-suggestions');
+                        initializeAutocomplete(document.getElementById('newEndLocation'), 'newEndLocation-suggestions');
+                    }
+                    modal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                });
 
-        // Функції для обробки дій у модальному вікні
+                cancelCityBtn.addEventListener('click', () => {
+                    modal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                });
+            }
+        }
+
+        // Функція для зміни маршруту
         function changeRoute(objId) {
             const obj = activeObjects.find(o => o.id === objId);
             if (!obj) return;
 
             const changeRouteModal = document.getElementById('changeRouteModal');
-            changeRouteModal.style.display = 'flex';
             const newEndInput = document.getElementById('newEndLocation');
+            if (!changeRouteModal || !newEndInput) return;
+
+            changeRouteModal.style.display = 'flex';
+            document.body.classList.add('modal-open');
+            newEndInput.value = '';
             initializeAutocomplete(newEndInput, 'newEndLocation-suggestions');
 
-            document.getElementById('applyRouteChange').onclick = async () => {
-                const newEndVal = newEndInput.value.trim();
-                if (!newEndVal) {
-                    alert('Введіть нове місто!');
-                    return;
-                }
-                try {
-                    const newEndCoords = await getCoordinates(newEndVal);
-                    const currentLat = obj.marker.getLatLng().lat;
-                    const currentLng = obj.marker.getLatLng().lng;
-                    const distanceToNewEnd = getDistanceFromLatLonInKm(currentLat, currentLng, newEndCoords.lat, newEndCoords.lng);
-                    const now = Date.now();
-                    const elapsed = now - obj.startTime;
-                    const remainingTimeMs = obj.duration - elapsed;
-                    const speed = getDistanceFromLatLonInKm(obj.start.lat, obj.start.lng, obj.end.lat, obj.end.lng) / (obj.duration / 3600000);
-                    const estimatedTimeMs = (distanceToNewEnd / speed) * 3600 * 1000; // Перерахунок часу
-                    obj.end = newEndCoords;
-                    obj.duration = elapsed + Math.max(remainingTimeMs, estimatedTimeMs); // Оновлюємо тривалість
-                    obj.startTime = now; // Скидаємо стартовий час
-                    await saveObjectToFirebase(obj);
-                    changeRouteModal.style.display = 'none';
-                } catch (error) {
-                    alert('Помилка: ' + error.message);
-                }
-            };
+            const applyRouteChange = document.getElementById('applyRouteChange');
+            const cancelRouteChange = document.getElementById('cancelRouteChange');
 
-            document.getElementById('cancelRouteChange').onclick = () => {
-                changeRouteModal.style.display = 'none';
-            };
+            if (applyRouteChange && cancelRouteChange) {
+                const applyHandler = async () => {
+                    const newEndVal = newEndInput.value.trim();
+                    if (!newEndVal) {
+                        alert('Введіть нове місто!');
+                        return;
+                    }
+                    try {
+                        const newEndCoords = await getCoordinates(newEndVal);
+                        const currentLat = obj.marker.getLatLng().lat;
+                        const currentLng = obj.marker.getLatLng().lng;
+                        const distanceToNewEnd = getDistanceFromLatLonInKm(currentLat, currentLng, newEndCoords.lat, newEndCoords.lng);
+                        const now = Date.now();
+                        const elapsed = now - obj.startTime;
+                        const remainingTimeMs = obj.duration - elapsed;
+                        const speed = getDistanceFromLatLonInKm(obj.start.lat, obj.start.lng, obj.end.lat, obj.end.lng) / (obj.duration / 3600000);
+                        const estimatedTimeMs = (distanceToNewEnd / speed) * 3600 * 1000;
+                        obj.end = newEndCoords;
+                        obj.duration = elapsed + Math.max(remainingTimeMs, estimatedTimeMs);
+                        obj.startTime = now;
+                        await saveObjectToFirebase(obj);
+                        changeRouteModal.style.display = 'none';
+                        document.body.classList.remove('modal-open');
+                    } catch (error) {
+                        alert('Помилка: ' + error.message);
+                    }
+                };
+
+                const cancelHandler = () => {
+                    changeRouteModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                };
+
+                applyRouteChange.removeEventListener('click', applyHandler);
+                applyRouteChange.addEventListener('click', applyHandler);
+                cancelRouteChange.removeEventListener('click', cancelHandler);
+                cancelRouteChange.addEventListener('click', cancelHandler);
+            }
         }
 
+        // Функція для додавання часу
         function addTime(objId) {
             const obj = activeObjects.find(o => o.id === objId);
             if (!obj) return;
 
             const addTimeModal = document.getElementById('addTimeModal');
+            const additionalTimeInput = document.getElementById('additionalTime');
+            if (!addTimeModal || !additionalTimeInput) return;
+
             addTimeModal.style.display = 'flex';
+            document.body.classList.add('modal-open');
+            additionalTimeInput.value = '';
 
-            document.getElementById('applyAddTime').onclick = async () => {
-                const additionalTime = parseInt(document.getElementById('additionalTime').value.trim());
-                if (isNaN(additionalTime) || additionalTime <= 0) {
-                    alert('Введіть коректний додатковий час!');
-                    return;
-                }
-                obj.duration += additionalTime * 1000;
-                await saveObjectToFirebase(obj);
-                addTimeModal.style.display = 'none';
-            };
+            const applyAddTime = document.getElementById('applyAddTime');
+            const cancelAddTime = document.getElementById('cancelAddTime');
 
-            document.getElementById('cancelAddTime').onclick = () => {
-                addTimeModal.style.display = 'none';
-            };
+            if (applyAddTime && cancelAddTime) {
+                const applyHandler = async () => {
+                    const additionalTime = parseInt(additionalTimeInput.value.trim());
+                    if (isNaN(additionalTime) || additionalTime <= 0) {
+                        alert('Введіть коректний додатковий час!');
+                        return;
+                    }
+                    obj.duration += additionalTime * 1000;
+                    await saveObjectToFirebase(obj);
+                    addTimeModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                };
+
+                const cancelHandler = () => {
+                    addTimeModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                };
+
+                applyAddTime.removeEventListener('click', applyHandler);
+                applyAddTime.addEventListener('click', applyHandler);
+                cancelAddTime.removeEventListener('click', cancelHandler);
+                cancelAddTime.addEventListener('click', cancelHandler);
+            }
         }
 
+        // Видалення об’єкта
         function deleteObject(objId) {
             const obj = activeObjects.find(o => o.id === objId);
             if (!obj) return;
             map.removeLayer(obj.marker);
             activeObjects = activeObjects.filter(o => o.id !== obj.id);
             database.ref(`activeObjects/${obj.id}`).remove();
+            document.getElementById('infoPanel').style.display = 'none';
         }
 
         // Ініціалізація
@@ -965,6 +1134,8 @@
                 'endLocation-suggestions'
             );
             
+            initializeCustomCityModal();
+
             document.getElementById('addObject').addEventListener('click', addObject);
             document.getElementById('clearAll').addEventListener('click', clearAll);
             document.getElementById('togglePanel').addEventListener('click', function() {
