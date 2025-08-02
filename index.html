@@ -310,7 +310,6 @@
         </div>
     </div>
 
-    <!-- Підключення бібліотек -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -376,29 +375,53 @@
         let activeObjects = [];
 
         // Завантаження даних з Firebase
-        function loadData() {
-            // Завантажити міста та координати
-            database.ref('locations').once('value').then(snapshot => {
-                const data = snapshot.val();
-                if (data) locations = data;
-            });
+        async function loadData() {
+            try {
+                // Завантажити міста та координати
+                const [locationsSnapshot, coordsSnapshot, objectsSnapshot] = await Promise.all([
+                    database.ref('locations').once('value'),
+                    database.ref('fallbackCoordinates').once('value'),
+                    database.ref('activeObjects').once('value')
+                ]);
 
-            database.ref('fallbackCoordinates').once('value').then(snapshot => {
-                const data = snapshot.val();
-                if (data) fallbackCoordinates = data;
-            });
+                if (locationsSnapshot.exists()) {
+                    locations = locationsSnapshot.val();
+                }
+                if (coordsSnapshot.exists()) {
+                    fallbackCoordinates = coordsSnapshot.val();
+                }
 
-            // Завантажити активні об'єкти
-            database.ref('activeObjects').on('value', snapshot => {
-                const data = snapshot.val();
-                if (data) {
-                    // Очистити існуючі об'єкти
-                    activeObjects.forEach(obj => {
-                        if (obj.marker) map.removeLayer(obj.marker);
-                    });
-                    activeObjects = [];
+                // Слідкувати за змінами об'єктів
+                database.ref('activeObjects').on('value', snapshot => {
+                    const data = snapshot.val();
+                    if (data) {
+                        // Очистити існуючі об'єкти
+                        activeObjects.forEach(obj => {
+                            if (obj.marker) map.removeLayer(obj.marker);
+                        });
+                        activeObjects = [];
 
-                    // Додати нові об'єкти
+                        // Додати нові об'єкти
+                        Object.values(data).forEach(obj => {
+                            const remainingTime = obj.duration - (Date.now() - obj.startTime);
+                            if (remainingTime > 0) {
+                                const newObj = {
+                                    ...obj,
+                                    marker: null
+                                };
+                                activeObjects.push(newObj);
+                                animateObject(newObj);
+                            } else {
+                                // Видалити застарілі об'єкти
+                                database.ref(`activeObjects/${obj.id}`).remove();
+                            }
+                        });
+                    }
+                });
+
+                // Ініціалізувати існуючі об'єкти
+                if (objectsSnapshot.exists()) {
+                    const data = objectsSnapshot.val();
                     Object.values(data).forEach(obj => {
                         const remainingTime = obj.duration - (Date.now() - obj.startTime);
                         if (remainingTime > 0) {
@@ -411,7 +434,9 @@
                         }
                     });
                 }
-            });
+            } catch (error) {
+                console.error('Помилка завантаження даних:', error);
+            }
         }
 
         // Автозаповнення міст
@@ -461,8 +486,10 @@
             }
 
             try {
-                const startCoords = await getCoordinates(startVal);
-                const endCoords = await getCoordinates(endVal);
+                const [startCoords, endCoords] = await Promise.all([
+                    getCoordinates(startVal),
+                    getCoordinates(endVal)
+                ]);
 
                 if (!startCoords || !endCoords) {
                     throw new Error('Не вдалося визначити координати');
@@ -478,9 +505,10 @@
                     marker: null
                 };
 
+                // Додати об'єкт до масиву та Firebase
                 activeObjects.push(obj);
+                await saveObjectToFirebase(obj);
                 animateObject(obj);
-                saveObjectsToFirebase();
                 
                 // Очистити поля
                 document.getElementById('startLocation').value = '';
@@ -516,7 +544,7 @@
                     if (!locations.includes(location)) {
                         locations.push(location);
                         fallbackCoordinates[location] = { lat: results[0].y, lng: results[0].x };
-                        saveSettingsToFirebase();
+                        await saveSettingsToFirebase();
                     }
                     return { lat: results[0].y, lng: results[0].x };
                 }
@@ -527,23 +555,12 @@
             }
         }
 
-        // Функція для розрахунку кута повороту (в градусах)
-        function calculateAngle(start, end) {
-            const dx = end.lng - start.lng;
-            const dy = end.lat - start.lat;
-            return (Math.atan2(dy, dx) * 180 / Math.PI + 90) % 360;
-        }
-
         // Анімація об'єкта з правильним поворотом
         function animateObject(obj) {
-            // Спочатку створюємо маркер без повороту
             obj.marker = L.marker([obj.start.lat, obj.start.lng], {
-                icon: icons[obj.type]
+                icon: icons[obj.type],
+                rotationAngle: calculateAngle(obj.start, obj.end)
             }).addTo(map);
-
-            // Встановлюємо початковий кут повороту
-            const initialAngle = calculateAngle(obj.start, obj.end);
-            obj.marker._icon.style.transform = `rotate(${initialAngle}deg)`;
 
             const startTime = obj.startTime;
             const endTime = startTime + obj.duration;
@@ -555,7 +572,7 @@
                 if (progress >= 1) {
                     map.removeLayer(obj.marker);
                     activeObjects = activeObjects.filter(o => o.id !== obj.id);
-                    saveObjectsToFirebase();
+                    database.ref(`activeObjects/${obj.id}`).remove();
                     return;
                 }
 
@@ -563,11 +580,11 @@
                 const lat = obj.start.lat + (obj.end.lat - obj.start.lat) * progress;
                 const lng = obj.start.lng + (obj.end.lng - obj.start.lng) * progress;
                 obj.marker.setLatLng([lat, lng]);
-
+                
                 // Оновлюємо кут повороту
                 const currentPos = { lat, lng };
-                const newAngle = calculateAngle(currentPos, obj.end);
-                obj.marker._icon.style.transform = `rotate(${newAngle}deg)`;
+                const angle = calculateAngle(currentPos, obj.end);
+                obj.marker.setRotationAngle(angle);
 
                 requestAnimationFrame(update);
             }
@@ -575,38 +592,49 @@
             update();
         }
 
-        // Збереження даних у Firebase
-        function saveSettingsToFirebase() {
-            database.ref('locations').set(locations);
-            database.ref('fallbackCoordinates').set(fallbackCoordinates);
+        // Функція для розрахунку кута повороту (в градусах)
+        function calculateAngle(start, end) {
+            const dx = end.lng - start.lng;
+            const dy = end.lat - start.lat;
+            return (Math.atan2(dy, dx) * 180 / Math.PI + 90) % 360;
         }
 
-        function saveObjectsToFirebase() {
-            const data = {};
-            activeObjects.forEach(obj => {
-                data[obj.id] = {
+        // Збереження даних у Firebase
+        async function saveSettingsToFirebase() {
+            try {
+                await database.ref('locations').set(locations);
+                await database.ref('fallbackCoordinates').set(fallbackCoordinates);
+            } catch (error) {
+                console.error('Помилка збереження налаштувань:', error);
+            }
+        }
+
+        async function saveObjectToFirebase(obj) {
+            try {
+                await database.ref(`activeObjects/${obj.id}`).set({
                     id: obj.id,
                     type: obj.type,
                     start: obj.start,
                     end: obj.end,
                     duration: obj.duration,
                     startTime: obj.startTime
-                };
-            });
-            database.ref('activeObjects').set(data)
-                .then(() => console.log('Об\'єкти збережено у Firebase'))
-                .catch(error => console.error('Помилка збереження:', error));
+                });
+            } catch (error) {
+                console.error('Помилка збереження об\'єкта:', error);
+            }
         }
 
         // Очищення всіх об'єктів
-        function clearAll() {
-            activeObjects.forEach(obj => {
-                if (obj.marker) map.removeLayer(obj.marker);
-            });
-            activeObjects = [];
-            database.ref('activeObjects').remove()
-                .then(() => console.log('Всі об\'єкти видалено'))
-                .catch(error => console.error('Помилка видалення:', error));
+        async function clearAll() {
+            try {
+                activeObjects.forEach(obj => {
+                    if (obj.marker) map.removeLayer(obj.marker);
+                });
+                activeObjects = [];
+                await database.ref('activeObjects').remove();
+            } catch (error) {
+                console.error('Помилка очищення:', error);
+            }
         }
 
         // Обробник кліку по карті
@@ -637,13 +665,13 @@
                     });
 
                 // Обробники кнопок модального вікна
-                document.getElementById('saveCityBtn').onclick = function() {
+                document.getElementById('saveCityBtn').onclick = async function() {
                     const cityName = cityInput.value.trim();
                     if (!cityName) return;
                     
                     locations.push(cityName);
                     fallbackCoordinates[cityName] = { lat: parseFloat(lat), lng: parseFloat(lng) };
-                    saveSettingsToFirebase();
+                    await saveSettingsToFirebase();
                     
                     modal.style.display = 'none';
                     initializeAutocomplete(startInput, 'startLocation-suggestions');
@@ -684,13 +712,6 @@
                 this.textContent = document.getElementById('controlPanel').classList.contains('hidden') 
                     ? '👁️' : '✕';
             });
-
-            // Тестовий маркер для перевірки повороту
-            const testMarker = L.marker([50.45, 30.52], {
-                icon: icons.drone
-            }).addTo(map);
-            testMarker._icon.style.transform = 'rotate(45deg)';
-            testMarker.bindPopup("Тест повороту маркера (45 градусів)").openPopup();
         });
     </script>
 </body>
