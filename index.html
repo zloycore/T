@@ -387,6 +387,7 @@
                 <select id="objectType">
                     <option value="drone">Shahed</option>
                     <option value="missile">Ракета</option>
+                    <option value="mig31k">МіГ-31К</option>
                 </select>
             </div>
 
@@ -548,6 +549,12 @@
             }),
             missile: L.icon({
                 iconUrl: 'https://i.ibb.co/nsBFHFFf/1753993399686.png',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+                className: 'rotatable-marker'
+            }),
+            mig31k: L.icon({
+                iconUrl: 'https://i.ibb.co/GvPvb2bj/1754101698192.png',
                 iconSize: [32, 32],
                 iconAnchor: [16, 16],
                 className: 'rotatable-marker'
@@ -798,9 +805,10 @@
                     const totalTimeHours = obj.duration / 3600000;
                     const speed = totalTimeHours > 0 ? (distance / totalTimeHours).toFixed(2) : 0;
 
+                    const objectName = obj.type === 'drone' ? 'Shahed' : obj.type === 'missile' ? 'Ракета' : 'МіГ-31К';
                     infoPanel.innerHTML = `
                         <div class="close-btn">×</div>
-                        Об'єкт: ${obj.type === 'drone' ? 'Shahed' : 'Ракета'}<br>
+                        Об'єкт: ${objectName}<br>
                         З: ${getLocationName(obj.start)}<br>
                         До: ${getLocationName(obj.end)}<br>
                         Час: ${formattedTime}<br>
