@@ -252,6 +252,7 @@
         .rotatable-marker {
             transform-origin: center center;
             transition: transform 0.1s linear;
+            will-change: transform;
         }
     </style>
 </head>
@@ -373,7 +374,7 @@
         // Дані міст та координат
         let locations = [
             "Київ, Україна", "Харків, Україна", "Одеса, Україна", "Дніпро, Україна", 
-            "Львів, Україна", "Запоріжжя, Україна", "Вінниця, Україна"
+            "Львів, Україна", "Запоріжжя, Україна", "Вінниця, Україна", "Гомель, Білорусь", "Кременчук, Україна"
         ];
 
         let fallbackCoordinates = {
@@ -383,7 +384,9 @@
             "Дніпро, Україна": { lat: 48.4647, lng: 35.0462 },
             "Львів, Україна": { lat: 49.8397, lng: 24.0297 },
             "Запоріжжя, Україна": { lat: 47.8517, lng: 35.1172 },
-            "Вінниця, Україна": { lat: 49.2325, lng: 28.4842 }
+            "Вінниця, Україна": { lat: 49.2325, lng: 28.4842 },
+            "Гомель, Білорусь": { lat: 52.4345, lng: 30.9754 },
+            "Кременчук, Україна": { lat: 49.0937, lng: 33.4188 }
         };
 
         // Іконки маркерів
@@ -391,13 +394,13 @@
             drone: L.icon({
                 iconUrl: 'https://i.ibb.co/hR7K0df2/1753984336893.png',
                 iconSize: [32, 32],
-                iconAnchor: [16, 16],
+                iconAnchor: [16, 16], // Центр іконки
                 className: 'rotatable-marker'
             }),
             missile: L.icon({
                 iconUrl: 'https://i.ibb.co/nsBFHFFf/1753993399686.png',
                 iconSize: [32, 32],
-                iconAnchor: [16, 16],
+                iconAnchor: [16, 16], // Центр іконки
                 className: 'rotatable-marker'
             })
         };
@@ -420,13 +423,11 @@
             database.ref('activeObjects').on('value', snapshot => {
                 const data = snapshot.val();
                 if (data) {
-                    // Очистити існуючі об'єкти
                     activeObjects.forEach(obj => {
                         if (obj.marker) map.removeLayer(obj.marker);
                     });
                     activeObjects = [];
 
-                    // Додати нові об'єкти
                     Object.values(data).forEach(obj => {
                         const remainingTime = obj.duration - (Date.now() - obj.startTime);
                         if (remainingTime > 0) {
@@ -437,7 +438,6 @@
                             activeObjects.push(newObj);
                             animateObject(newObj);
                         } else {
-                            // Видалити застарілі об'єкти
                             database.ref(`activeObjects/${obj.id}`).remove();
                         }
                     });
@@ -511,12 +511,10 @@
                     marker: null
                 };
 
-                // Додати об'єкт до масиву та Firebase
                 activeObjects.push(obj);
                 await saveObjectToFirebase(obj);
                 animateObject(obj);
                 
-                // Очистити поля
                 document.getElementById('startLocation').value = '';
                 document.getElementById('endLocation').value = '';
             } catch (error) {
@@ -527,7 +525,6 @@
 
         // Отримання координат
         async function getCoordinates(location) {
-            // Перевірка чи це координати
             const coordsMatch = location.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
             if (coordsMatch) {
                 const lat = parseFloat(coordsMatch[1]);
@@ -537,16 +534,13 @@
                 }
             }
 
-            // Перевірка кешу
             if (fallbackCoordinates[location]) {
                 return fallbackCoordinates[location];
             }
 
-            // Пошук через геокодер
             try {
-                const results = await searchProvider.search({ query: location + ', Україна' });
+                const results = await searchProvider.search({ query: location });
                 if (results.length > 0) {
-                    // Зберегти нове місто
                     if (!locations.includes(location)) {
                         locations.push(location);
                         fallbackCoordinates[location] = { lat: results[0].y, lng: results[0].x };
@@ -563,47 +557,48 @@
 
         // Анімація об'єкта з правильним поворотом
         function animateObject(obj) {
-            // Створюємо спеціальний маркер з підтримкою повороту
             obj.marker = L.rotatedMarker([obj.start.lat, obj.start.lng], {
                 icon: icons[obj.type],
                 rotationAngle: 0,
-                rotationOrigin: 'center center'
+                rotationOrigin: '50% 0%' // Верхній центр як точка повороту
             }).addTo(map);
-            
-            // Встановлюємо початковий кут повороту
-            const initialAngle = calculateAngle(obj.start, obj.end);
-            obj.marker.setRotationAngle(initialAngle);
-            
+
             const startTime = obj.startTime;
             const endTime = startTime + obj.duration;
-            
+
             function update() {
                 const now = Date.now();
                 const progress = Math.min(1, (now - startTime) / obj.duration);
-                
+
                 if (progress >= 1) {
                     map.removeLayer(obj.marker);
                     activeObjects = activeObjects.filter(o => o.id !== obj.id);
                     database.ref(`activeObjects/${obj.id}`).remove();
                     return;
                 }
-                
-                // Оновлюємо позицію
+
                 const lat = obj.start.lat + (obj.end.lat - obj.start.lat) * progress;
                 const lng = obj.start.lng + (obj.end.lng - obj.start.lng) * progress;
+                const currentPos = { lat, lng };
+
                 obj.marker.setLatLng([lat, lng]);
-                
+
+                // Обчислюємо кут повороту для поточного напрямку руху
+                const dx = obj.end.lng - currentPos.lng;
+                const dy = obj.end.lat - currentPos.lat;
+                let angle = Math.atan2(-dy, dx) * 180 / Math.PI; // Інвертуємо dy для коректної орієнтації
+                angle = (angle + 360) % 360; // Нормалізуємо кут до [0, 360)
+
+                // Корекція для орієнтації: верхній центр дивиться в напрямок руху
+                angle += 90; // Базова корекція
+                angle = (angle + 360) % 360; // Додаткова нормалізація
+
+                obj.marker.setRotationAngle(angle);
+
                 requestAnimationFrame(update);
             }
-            
-            update();
-        }
 
-        // Функція для розрахунку кута повороту (в градусах)
-        function calculateAngle(start, end) {
-            const dx = end.lng - start.lng;
-            const dy = end.lat - start.lat;
-            return (Math.atan2(dy, dx) * 180 / Math.PI + 90) % 360;
+            update();
         }
 
         // Збереження даних у Firebase
@@ -659,7 +654,6 @@
                 const modal = document.getElementById('customCityModal');
                 const cityInput = document.getElementById('customCityName');
                 
-                // Спробувати отримати назву місця
                 searchProvider.search({ query: `${lat}, ${lng}` })
                     .then(results => {
                         cityInput.value = results[0]?.label || `${lat}, ${lng}`;
@@ -671,7 +665,6 @@
                         modal.style.display = 'flex';
                     });
 
-                // Обробники кнопок модального вікна
                 document.getElementById('saveCityBtn').onclick = async function() {
                     const cityName = cityInput.value.trim();
                     if (!cityName) return;
@@ -693,7 +686,6 @@
 
         // Ініціалізація
         document.addEventListener('DOMContentLoaded', () => {
-            // Перевірка підключення до Firebase
             firebase.database().ref('.info/connected').on('value', (snapshot) => {
                 if (snapshot.val() === true) {
                     console.log('Підключено до Firebase');
